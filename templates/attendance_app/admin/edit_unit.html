@@ -1,0 +1,16 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Edit Unit{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit Unit: {{ unit.name }}</h2>
+    
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Update Unit</button>
+        <a href="{% url 'unit_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

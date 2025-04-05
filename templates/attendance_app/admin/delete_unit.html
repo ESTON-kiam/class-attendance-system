@@ -1,0 +1,17 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Delete Unit{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Delete Unit</h2>
+    
+    <p>Are you sure you want to delete the unit "{{ unit.name }}"?</p>
+    
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Confirm Delete</button>
+        <a href="{% url 'unit_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

@@ -245,3 +245,40 @@ def delete_course(request, pk):
         course.delete()
         return redirect('course_list')
     return render(request, 'attendance_app/admin/delete_course.html', {'course': course})
+
+
+@login_required
+@user_passes_test(is_admin)
+def edit_unit(request, unit_id):
+    unit = get_object_or_404(Unit, pk=unit_id)
+
+    if request.method == 'POST':
+        form = UnitForm(request.POST, instance=unit)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Unit updated successfully!')
+            return redirect('unit_list')
+        else:
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        form = UnitForm(instance=unit)
+
+    return render(request, 'attendance_app/admin/edit_unit.html', {
+        'form': form,
+        'unit': unit
+    })
+
+
+@login_required
+@user_passes_test(is_admin)
+def delete_unit(request, unit_id):
+    unit = get_object_or_404(Unit, pk=unit_id)
+
+    if request.method == 'POST':
+        unit.delete()
+        messages.success(request, 'Unit deleted successfully!')
+        return redirect('unit_list')
+
+    return render(request, 'attendance_app/admin/delete_unit.html', {
+        'unit': unit
+    })
