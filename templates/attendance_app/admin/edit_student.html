@@ -10,16 +10,43 @@
         
         <!-- Full Name Field -->
         <div class="mb-3">
-            <label for="{{ form.full_name.id_for_label }}" class="form-label">Full Name</label>
+            <label for="{{ form.full_name.id_for_label }}" class="form-label">{{ form.full_name.label }}</label>
             {{ form.full_name }}
             {% if form.full_name.errors %}
                 <div class="text-danger">{{ form.full_name.errors }}</div>
             {% endif %}
         </div>
         
-        <!-- Photo Field with Webcam and File Upload Options -->
+        <!-- Gender Field -->
         <div class="mb-3">
-            <label for="{{ form.photo.id_for_label }}" class="form-label">Photo</label>
+            <label class="form-label">{{ form.gender.label }}</label>
+            <div class="d-flex gap-3">
+                {% for choice in form.gender %}
+                    <div class="form-check">
+                        {{ choice.tag }}
+                        <label class="form-check-label" for="{{ choice.id_for_label }}">
+                            {{ choice.choice_label }}
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
+            {% if form.gender.errors %}
+                <div class="text-danger">{{ form.gender.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Phone Number Field -->
+        <div class="mb-3">
+            <label for="{{ form.phone_number.id_for_label }}" class="form-label">{{ form.phone_number.label }}</label>
+            {{ form.phone_number }}
+            {% if form.phone_number.errors %}
+                <div class="text-danger">{{ form.phone_number.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Photo Field with Virtual Square Guide -->
+        <div class="mb-3">
+            <label class="form-label">{{ form.photo.label }}</label>
             
             {% if student.photo %}
                 <div class="mb-3 current-photo-container">
@@ -40,19 +67,33 @@
                 </div>
             {% endif %}
             
-            <!-- Webcam Capture Section -->
+            <!-- Enhanced Webcam Capture with Virtual Square -->
             <div class="card mb-3">
                 <div class="card-header">
                     <h5 class="mb-0">Webcam Capture</h5>
                 </div>
                 <div class="card-body">
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle"></i> Position your face within the square guide
+                    </div>
+                    
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="video-container mb-2">
+                            <div class="video-container mb-2 position-relative">
                                 <video id="webcam" autoplay playsinline width="100%" class="border rounded"></video>
+                                <canvas id="face-overlay" class="position-absolute top-0 left-0" style="pointer-events: none;"></canvas>
+                                <div class="position-absolute top-0 left-0 w-100 h-100" style="pointer-events: none;">
+                                    <div class="guide-square"></div>
+                                </div>
                             </div>
                             <div class="d-flex gap-2">
-                                <button type="button" id="capture-btn" class="btn btn-primary">Capture Photo</button>
+                                <button type="button" id="capture-btn" class="btn btn-primary" disabled>
+                                    <span id="capture-text">Capture Photo</span>
+                                    <span id="face-detecting" class="d-none">
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                        Aligning face...
+                                    </span>
+                                </button>
                                 <button type="button" id="retry-btn" class="btn btn-outline-secondary" style="display:none;">Retry</button>
                             </div>
                         </div>
@@ -86,13 +127,12 @@
                 </div>
             </div>
             
-            <!-- Hidden field for webcam data -->
             <input type="hidden" id="photo_data" name="photo_data">
         </div>
         
         <!-- Course Field -->
         <div class="mb-3">
-            <label for="{{ form.course.id_for_label }}" class="form-label">Course</label>
+            <label for="{{ form.course.id_for_label }}" class="form-label">{{ form.course.label }}</label>
             {{ form.course }}
             {% if form.course.errors %}
                 <div class="text-danger">{{ form.course.errors }}</div>
@@ -101,8 +141,17 @@
         
         <!-- Registered Units Field -->
         <div class="mb-3">
-            <label for="{{ form.registered_units.id_for_label }}" class="form-label">Registered Units</label>
-            {{ form.registered_units }}
+            <label class="form-label">{{ form.registered_units.label }}</label>
+            <div class="units-checkbox-container">
+                {% for unit in form.registered_units %}
+                    <div class="form-check">
+                        {{ unit.tag }}
+                        <label class="form-check-label" for="{{ unit.id_for_label }}">
+                            {{ unit.choice_label }}
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
             {% if form.registered_units.errors %}
                 <div class="text-danger">{{ form.registered_units.errors }}</div>
             {% endif %}
@@ -115,68 +164,176 @@
     </form>
 </div>
 
-<!-- Webcam and Image Handling JavaScript -->
+<!-- Load face-api.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<!-- Enhanced Webcam with Virtual Square Guide -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     // File input label update
     const fileInput = document.querySelector('#{{ form.photo.id_for_label }}');
     if (fileInput) {
         fileInput.addEventListener('change', function(e) {
             const fileName = e.target.files[0]?.name || 'Choose file...';
             document.querySelector('.custom-file-label').textContent = fileName;
-            // Clear webcam capture if file is selected
             document.getElementById('photo_data').value = '';
             hideCanvas();
+            stopFaceDetection();
         });
     }
 
     // Webcam elements
     const video = document.getElementById('webcam');
+    const faceOverlay = document.getElementById('face-overlay');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const captureBtn = document.getElementById('capture-btn');
     const retryBtn = document.getElementById('retry-btn');
     const photoDataInput = document.getElementById('photo_data');
     const previewPlaceholder = document.getElementById('preview-placeholder');
+    const captureText = document.getElementById('capture-text');
+    const faceDetecting = document.getElementById('face-detecting');
     
-    // Current photo checkbox handler
-    const photoClearCheckbox = document.getElementById('photo-clear');
-    if (photoClearCheckbox) {
-        photoClearCheckbox.addEventListener('change', function() {
-            const currentPhoto = document.getElementById('current-photo');
-            if (this.checked) {
-                currentPhoto.style.opacity = '0.5';
-            } else {
-                currentPhoto.style.opacity = '1';
-            }
-        });
+    let faceDetectionInterval;
+    let isFaceDetected = false;
+    let stream;
+    let guideSquare;
+
+    // Calculate guide square dimensions (60% of smaller dimension)
+    function calculateGuideSquare() {
+        const minDimension = Math.min(video.videoWidth, video.videoHeight);
+        const squareSize = minDimension * 0.6;
+        return {
+            x: (video.videoWidth - squareSize) / 2,
+            y: (video.videoHeight - squareSize) / 2,
+            size: squareSize
+        };
     }
 
-    // Start webcam
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(function(stream) {
-                video.srcObject = stream;
-            })
-            .catch(function(error) {
-                console.error("Webcam error: ", error);
-                alert("Could not access the webcam. Please check permissions.");
+    // Load face-api.js models
+    async function loadModels() {
+        try {
+            await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+            await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+            return true;
+        } catch (error) {
+            console.error("Error loading face detection models:", error);
+            return false;
+        }
+    }
+
+    // Start webcam with face detection
+    async function startWebcam() {
+        const modelsLoaded = await loadModels();
+        if (!modelsLoaded) {
+            alert("Face detection features unavailable. You can still upload a photo.");
+            return;
+        }
+
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: 640, 
+                    height: 480,
+                    facingMode: 'user',
+                    focusMode: 'continuous'  // Try to enable continuous focus
+                } 
             });
+            video.srcObject = stream;
+            
+            // Set overlay dimensions to match video
+            video.addEventListener('play', () => {
+                faceOverlay.width = video.videoWidth;
+                faceOverlay.height = video.videoHeight;
+                guideSquare = calculateGuideSquare();
+                startFaceDetection();
+            });
+        } catch (error) {
+            console.error("Webcam error: ", error);
+            alert("Could not access the webcam. Please check permissions.");
+        }
     }
 
-    // Capture photo from webcam
+    // Face detection function with guide square
+    function startFaceDetection() {
+        faceDetectionInterval = setInterval(async () => {
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            
+            const detections = await faceapi.detectAllFaces(
+                video, 
+                new faceapi.TinyFaceDetectorOptions()
+            ).withFaceLandmarks();
+            
+            const faceOverlayCtx = faceOverlay.getContext('2d');
+            faceOverlayCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
+            
+            // Draw guide square
+            faceOverlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            faceOverlayCtx.lineWidth = 2;
+            faceOverlayCtx.setLineDash([5, 5]);
+            faceOverlayCtx.strokeRect(guideSquare.x, guideSquare.y, guideSquare.size, guideSquare.size);
+            faceOverlayCtx.setLineDash([]);
+            
+            // Draw face detection box and check position
+            if (detections.length > 0) {
+                const detection = detections[0]; // Use primary face only
+                const faceBox = detection.detection.box;
+                
+                // Check if face is within guide square
+                const isFaceCentered = (
+                    faceBox.x >= guideSquare.x &&
+                    faceBox.y >= guideSquare.y &&
+                    (faceBox.x + faceBox.width) <= (guideSquare.x + guideSquare.size) &&
+                    (faceBox.y + faceBox.height) <= (guideSquare.y + guideSquare.size)
+                );
+                
+                // Draw face box with appropriate color
+                faceOverlayCtx.strokeStyle = isFaceCentered ? '#28a745' : '#dc3545';
+                faceOverlayCtx.lineWidth = 2;
+                faceOverlayCtx.strokeRect(faceBox.x, faceBox.y, faceBox.width, faceBox.height);
+                
+                isFaceDetected = isFaceCentered;
+                captureBtn.disabled = !isFaceCentered;
+                faceDetecting.classList.toggle('d-none', isFaceCentered);
+                captureText.classList.toggle('d-none', !isFaceCentered);
+            } else {
+                isFaceDetected = false;
+                captureBtn.disabled = true;
+                faceDetecting.classList.remove('d-none');
+                captureText.classList.add('d-none');
+            }
+        }, 300);
+    }
+
+    // Stop face detection
+    function stopFaceDetection() {
+        if (faceDetectionInterval) {
+            clearInterval(faceDetectionInterval);
+        }
+        const faceOverlayCtx = faceOverlay.getContext('2d');
+        faceOverlayCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
+    }
+
+    // Capture photo from webcam (cropped to guide square)
     captureBtn.addEventListener('click', function() {
-        // Hide the placeholder and show canvas
+        if (!isFaceDetected) return;
+        
         previewPlaceholder.classList.add('d-none');
         canvas.classList.remove('d-none');
         
-        // Draw current video frame to canvas
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Set canvas dimensions to match guide square
+        canvas.width = guideSquare.size;
+        canvas.height = guideSquare.size;
+        
+        // Draw cropped image (guide square area only)
+        ctx.drawImage(
+            video, 
+            guideSquare.x, guideSquare.y, guideSquare.size, guideSquare.size,  // Source (crop)
+            0, 0, guideSquare.size, guideSquare.size                          // Destination
+        );
         
         // Convert to data URL and store in hidden field
-        const imageData = canvas.toDataURL('image/png');
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
         photoDataInput.value = imageData;
         
         // Clear any file input
@@ -188,6 +345,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show retry button
         captureBtn.style.display = 'none';
         retryBtn.style.display = 'block';
+        
+        // Stop face detection after capture
+        stopFaceDetection();
     });
 
     // Retry capture
@@ -196,6 +356,7 @@ document.addEventListener('DOMContentLoaded', function() {
         photoDataInput.value = '';
         captureBtn.style.display = 'block';
         retryBtn.style.display = 'none';
+        startFaceDetection();
     });
 
     function hideCanvas() {
@@ -203,20 +364,29 @@ document.addEventListener('DOMContentLoaded', function() {
         previewPlaceholder.classList.remove('d-none');
     }
 
-    // Stop webcam when leaving page
+    // Cleanup when leaving page
     window.addEventListener('beforeunload', function() {
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
+        stopFaceDetection();
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
         }
     });
+
+    // Initialize webcam
+    startWebcam();
 });
 </script>
 
 <style>
-    .video-container, .preview-container {
+    .video-container {
         position: relative;
         background: #f8f9fa;
         border-radius: 0.25rem;
+        overflow: hidden;
+    }
+    #face-overlay {
+        width: 100%;
+        height: auto;
     }
     #canvas {
         max-width: 100%;
@@ -225,6 +395,28 @@ document.addEventListener('DOMContentLoaded', function() {
     #preview-placeholder {
         border: 1px dashed #dee2e6;
         border-radius: 0.25rem;
+    }
+    .video-container canvas {
+        width: 100%;
+        height: auto;
+    }
+    .guide-square {
+        position: absolute;
+        top: 20%;
+        left: 20%;
+        width: 60%;
+        height: 60%;
+        border: 2px dashed rgba(255, 255, 255, 0.7);
+        border-radius: 5px;
+        pointer-events: none;
+    }
+    .units-checkbox-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 0.5rem;
+    }
+    .current-photo-container img {
+        transition: opacity 0.3s;
     }
 </style>
 {% endblock %}
