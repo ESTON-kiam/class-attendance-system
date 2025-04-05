@@ -1,3 +1,8 @@
 Django~=5.2
 opencv-python~=4.11.0.86
 numpy~=2.2.4
+pillow~=11.1.0
+opencv-python
+dlib
+cmake
+face_replace
