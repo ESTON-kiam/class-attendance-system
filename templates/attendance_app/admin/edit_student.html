@@ -1,0 +1,86 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Edit Student{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit Student: {{ student.full_name }}</h2>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        
+        <!-- Full Name Field -->
+        <div class="mb-3">
+            <label for="{{ form.full_name.id_for_label }}" class="form-label">Full Name</label>
+            {{ form.full_name }}
+            {% if form.full_name.errors %}
+                <div class="text-danger">{{ form.full_name.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Photo Field with Current Image -->
+        <div class="mb-3">
+            <label for="{{ form.photo.id_for_label }}" class="form-label">Photo</label>
+            
+            {% if student.photo %}
+                <div class="mb-3 current-photo-container">
+                    <p class="mb-2">Current Photo:</p>
+                    <img src="{{ student.photo.url }}" 
+                         alt="{{ student.full_name }}" 
+                         class="img-thumbnail d-block mb-2" 
+                         style="max-height: 200px;">
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" 
+                               name="photo-clear" id="photo-clear">
+                        <label class="form-check-label" for="photo-clear">
+                            Remove current photo
+                        </label>
+                    </div>
+                </div>
+                <p class="text-muted">Upload new photo to replace:</p>
+            {% endif %}
+            
+            <div class="custom-file">
+                {{ form.photo }}
+                <label class="custom-file-label" for="{{ form.photo.id_for_label }}">
+                    Choose file...
+                </label>
+            </div>
+            {% if form.photo.errors %}
+                <div class="text-danger">{{ form.photo.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Course Field -->
+        <div class="mb-3">
+            <label for="{{ form.course.id_for_label }}" class="form-label">Course</label>
+            {{ form.course }}
+            {% if form.course.errors %}
+                <div class="text-danger">{{ form.course.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Registered Units Field -->
+        <div class="mb-3">
+            <label for="{{ form.registered_units.id_for_label }}" class="form-label">Registered Units</label>
+            {{ form.registered_units }}
+            {% if form.registered_units.errors %}
+                <div class="text-danger">{{ form.registered_units.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="{% url 'student_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<!-- Optional: JavaScript to show the selected file name -->
+<script>
+document.querySelector('#{{ form.photo.id_for_label }}').addEventListener('change', function(e) {
+    var fileName = e.target.files[0]?.name || 'Choose file...';
+    document.querySelector('.custom-file-label').textContent = fileName;
+});
+</script>
+{% endblock %}

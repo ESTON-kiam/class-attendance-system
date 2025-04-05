@@ -3,6 +3,8 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import login, authenticate
 from django.http import JsonResponse, HttpResponse
 from django.conf import settings
+
+from .face_recognition import FaceRecognition
 from .models import Course, Unit, Student, Attendance
 from .forms import CourseForm, UnitForm, StudentRegistrationForm, StudentUpdateForm
 
@@ -204,3 +206,27 @@ def student_attendance_records(request):
     attendances = Attendance.objects.filter(student=student).order_by('-date', '-time')
 
     return render(request, 'attendance_app/student/attendance_records.html', {'attendances': attendances})
+
+
+@login_required
+@user_passes_test(is_admin)
+def edit_course(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    if request.method == 'POST':
+        form = CourseForm(request.POST, instance=course)
+        if form.is_valid():
+            form.save()
+            return redirect('course_list')
+    else:
+        form = CourseForm(instance=course)
+    return render(request, 'attendance_app/admin/edit_course.html', {'form': form, 'course': course})
+
+
+@login_required
+@user_passes_test(is_admin)
+def delete_course(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    if request.method == 'POST':
+        course.delete()
+        return redirect('course_list')
+    return render(request, 'attendance_app/admin/delete_course.html', {'course': course})

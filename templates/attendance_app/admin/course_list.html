@@ -1,0 +1,47 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Course List{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Course List</h2>
+    <a href="{% url 'add_course' %}" class="btn btn-primary mb-3">
+        <i class="bi bi-plus-circle"></i> Add New Course
+    </a>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for course in courses %}
+                <tr>
+                    <td>{{ course.name }}</td>
+                    <td>{{ course.code }}</td>
+                    <td>{{ course.description|truncatechars:50 }}</td>
+                    <!-- In your table rows, update the actions column -->
+<td>
+    <a href="{% url 'edit_course' course.pk %}" class="btn btn-sm btn-warning">
+        <i class="bi bi-pencil"></i> Edit
+    </a>
+    <a href="{% url 'delete_course' course.pk %}" class="btn btn-sm btn-danger">
+    <i class="bi bi-trash"></i> Delete
+</a>
+</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="text-center">No courses available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

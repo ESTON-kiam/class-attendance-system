@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+
+from django.core.checks import templates
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -40,14 +43,21 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'attendance_system.urls'
 
+# Media files (user uploaded files)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
-        ,
-        'APP_DIRS': True,
+        'DIRS': [
+            os.path.join(BASE_DIR, 'templates'),  # For project-wide templates
+            os.path.join(BASE_DIR, 'attendance_app/../templates'),  # For app templates
+        ],
+        'APP_DIRS': True,  # Important for finding app templates
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',

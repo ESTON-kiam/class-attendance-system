@@ -1,0 +1,17 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Register Student{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Register New Student</h2>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="mb-3">
+            {{ form.as_p }}
+        </div>
+        <button type="submit" class="btn btn-primary">Register</button>
+        <a href="{% url 'student_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

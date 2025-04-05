@@ -4,7 +4,8 @@ import os
 
 
 def student_image_path(instance, filename):
-    return f'student_images/{instance.admission_number}/{filename}'
+    # File will be uploaded to MEDIA_ROOT/student_photos/admission_number/filename
+    return f'student_photos/{instance.admission_number}/{filename}'
 
 
 class Course(models.Model):

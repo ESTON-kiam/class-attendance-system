@@ -8,6 +8,9 @@ class CourseForm(forms.ModelForm):
     class Meta:
         model = Course
         fields = ['name', 'code', 'description']
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
 
 
 class UnitForm(forms.ModelForm):
@@ -46,3 +49,16 @@ class StudentUpdateForm(forms.ModelForm):
     class Meta:
         model = Student
         fields = ['full_name', 'photo', 'course', 'registered_units']
+        widgets = {
+            'photo': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'  # This ensures only image files can be selected
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['photo'].required = False
+        # Add a custom attribute to store the current image URL
+        if self.instance and self.instance.photo:
+            self.fields['photo'].widget.attrs['data-current-image'] = self.instance.photo.url

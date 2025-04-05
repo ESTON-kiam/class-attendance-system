@@ -1,0 +1,48 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Unit List{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Unit List</h2>
+    <a href="{% url 'add_unit' %}" class="btn btn-primary mb-3">
+        <i class="bi bi-plus-circle"></i> Add New Unit
+    </a>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Course</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for unit in units %}
+                <tr>
+                    <td>{{ unit.name }}</td>
+                    <td>{{ unit.code }}</td>
+                    <td>{{ unit.course.name }}</td>
+                    <td>{{ unit.description|truncatechars:50 }}</td>
+                    <td>
+                        <a href="#" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil"></i> Edit
+                        </a>
+                        <a href="#" class="btn btn-sm btn-danger">
+                            <i class="bi bi-trash"></i> Delete
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center">No units available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
