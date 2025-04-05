@@ -17,7 +17,7 @@
             {% endif %}
         </div>
         
-        <!-- Photo Field with Current Image -->
+        <!-- Photo Field with Webcam and File Upload Options -->
         <div class="mb-3">
             <label for="{{ form.photo.id_for_label }}" class="form-label">Photo</label>
             
@@ -27,9 +27,10 @@
                     <img src="{{ student.photo.url }}" 
                          alt="{{ student.full_name }}" 
                          class="img-thumbnail d-block mb-2" 
-                         style="max-height: 200px;">
+                         style="max-height: 200px;"
+                         id="current-photo">
                     
-                    <div class="form-check">
+                    <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" 
                                name="photo-clear" id="photo-clear">
                         <label class="form-check-label" for="photo-clear">
@@ -37,18 +38,56 @@
                         </label>
                     </div>
                 </div>
-                <p class="text-muted">Upload new photo to replace:</p>
             {% endif %}
             
-            <div class="custom-file">
-                {{ form.photo }}
-                <label class="custom-file-label" for="{{ form.photo.id_for_label }}">
-                    Choose file...
-                </label>
+            <!-- Webcam Capture Section -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Webcam Capture</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="video-container mb-2">
+                                <video id="webcam" autoplay playsinline width="100%" class="border rounded"></video>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" id="capture-btn" class="btn btn-primary">Capture Photo</button>
+                                <button type="button" id="retry-btn" class="btn btn-outline-secondary" style="display:none;">Retry</button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="preview-container">
+                                <canvas id="canvas" width="300" height="225" class="border rounded d-none"></canvas>
+                                <div id="preview-placeholder" class="text-muted text-center py-5">
+                                    Your captured image will appear here
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            {% if form.photo.errors %}
-                <div class="text-danger">{{ form.photo.errors }}</div>
-            {% endif %}
+            
+            <!-- File Upload Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Or Upload Photo</h5>
+                </div>
+                <div class="card-body">
+                    <div class="custom-file">
+                        {{ form.photo }}
+                        <label class="custom-file-label" for="{{ form.photo.id_for_label }}">
+                            Choose file...
+                        </label>
+                    </div>
+                    {% if form.photo.errors %}
+                        <div class="text-danger">{{ form.photo.errors }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Hidden field for webcam data -->
+            <input type="hidden" id="photo_data" name="photo_data">
         </div>
         
         <!-- Course Field -->
@@ -76,11 +115,116 @@
     </form>
 </div>
 
-<!-- Optional: JavaScript to show the selected file name -->
+<!-- Webcam and Image Handling JavaScript -->
 <script>
-document.querySelector('#{{ form.photo.id_for_label }}').addEventListener('change', function(e) {
-    var fileName = e.target.files[0]?.name || 'Choose file...';
-    document.querySelector('.custom-file-label').textContent = fileName;
+document.addEventListener('DOMContentLoaded', function() {
+    // File input label update
+    const fileInput = document.querySelector('#{{ form.photo.id_for_label }}');
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || 'Choose file...';
+            document.querySelector('.custom-file-label').textContent = fileName;
+            // Clear webcam capture if file is selected
+            document.getElementById('photo_data').value = '';
+            hideCanvas();
+        });
+    }
+
+    // Webcam elements
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const captureBtn = document.getElementById('capture-btn');
+    const retryBtn = document.getElementById('retry-btn');
+    const photoDataInput = document.getElementById('photo_data');
+    const previewPlaceholder = document.getElementById('preview-placeholder');
+    
+    // Current photo checkbox handler
+    const photoClearCheckbox = document.getElementById('photo-clear');
+    if (photoClearCheckbox) {
+        photoClearCheckbox.addEventListener('change', function() {
+            const currentPhoto = document.getElementById('current-photo');
+            if (this.checked) {
+                currentPhoto.style.opacity = '0.5';
+            } else {
+                currentPhoto.style.opacity = '1';
+            }
+        });
+    }
+
+    // Start webcam
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(stream) {
+                video.srcObject = stream;
+            })
+            .catch(function(error) {
+                console.error("Webcam error: ", error);
+                alert("Could not access the webcam. Please check permissions.");
+            });
+    }
+
+    // Capture photo from webcam
+    captureBtn.addEventListener('click', function() {
+        // Hide the placeholder and show canvas
+        previewPlaceholder.classList.add('d-none');
+        canvas.classList.remove('d-none');
+        
+        // Draw current video frame to canvas
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to data URL and store in hidden field
+        const imageData = canvas.toDataURL('image/png');
+        photoDataInput.value = imageData;
+        
+        // Clear any file input
+        if (fileInput) {
+            fileInput.value = '';
+            document.querySelector('.custom-file-label').textContent = 'Choose file...';
+        }
+        
+        // Show retry button
+        captureBtn.style.display = 'none';
+        retryBtn.style.display = 'block';
+    });
+
+    // Retry capture
+    retryBtn.addEventListener('click', function() {
+        hideCanvas();
+        photoDataInput.value = '';
+        captureBtn.style.display = 'block';
+        retryBtn.style.display = 'none';
+    });
+
+    function hideCanvas() {
+        canvas.classList.add('d-none');
+        previewPlaceholder.classList.remove('d-none');
+    }
+
+    // Stop webcam when leaving page
+    window.addEventListener('beforeunload', function() {
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+    });
 });
 </script>
+
+<style>
+    .video-container, .preview-container {
+        position: relative;
+        background: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    #canvas {
+        max-width: 100%;
+        height: auto;
+    }
+    #preview-placeholder {
+        border: 1px dashed #dee2e6;
+        border-radius: 0.25rem;
+    }
+</style>
 {% endblock %}

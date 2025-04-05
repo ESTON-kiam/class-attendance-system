@@ -29,12 +29,21 @@ class Unit(models.Model):
 
 
 class Student(models.Model):
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+        ('O', 'Other'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     admission_number = models.CharField(max_length=20, unique=True)
     full_name = models.CharField(max_length=100)
-    photo = models.ImageField(upload_to=student_image_path)
+    photo = models.ImageField(upload_to=student_image_path, blank=True, null=True)
     course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True)
     registered_units = models.ManyToManyField(Unit, related_name='students')
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True, null=True)
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

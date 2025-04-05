@@ -1,3 +1,4 @@
+from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import login, authenticate
@@ -80,18 +81,32 @@ def student_list(request):
 
 
 @login_required
-@user_passes_test(is_admin)
+@user_passes_test(lambda u: u.is_superuser)
 def register_student(request):
     if request.method == 'POST':
-        form = StudentRegistrationForm(request.POST, request.FILES)
+        form = StudentRegistrationForm(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('student_list')
+            try:
+                form.save()
+                messages.success(request, 'Student registered successfully!')
+                return redirect('student_list')
+            except IntegrityError as e:
+                messages.error(request, f'Error saving student: {str(e)}')
+        else:
+            # Collect all form errors
+            error_messages = []
+            for field, errors in form.errors.items():
+                for error in errors:
+                    error_messages.append(f"{field}: {error}")
+            messages.error(request, 'Please correct the errors below.')
+            messages.error(request, ' '.join(error_messages))
     else:
         form = StudentRegistrationForm()
-    return render(request, 'attendance_app/admin/register_student.html', {'form': form})
 
-
+    return render(request, 'attendance_app/admin/register_student.html', {
+        'form': form,
+        'form_errors': form.errors if request.method == 'POST' else None
+    })
 @login_required
 @user_passes_test(is_admin)
 def edit_student(request, pk):
