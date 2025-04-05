@@ -1,0 +1,140 @@
+{% extends "attendance_app/base.html" %}
+
+{% block title %}Student Dashboard{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Student Dashboard</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">My Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-4 fw-bold">Admission Number:</div>
+                    <div class="col-8">{{ student.admission_number }}</div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-4 fw-bold">Full Name:</div>
+                    <div class="col-8">{{ student.full_name }}</div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-4 fw-bold">Course:</div>
+                    <div class="col-8">{{ student.course.name }}</div>
+                </div>
+                <div class="row">
+                    <div class="col-4 fw-bold">Photo:</div>
+                    <div class="col-8">
+                        <img src="{{ student.photo.url }}" alt="Student Photo" class="img-thumbnail" style="max-width: 150px;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Today's Attendance</h5>
+            </div>
+            <div class="card-body">
+                {% if today_attendance %}
+                    <ul class="list-group">
+                        {% for attendance in today_attendance %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ attendance.unit.name }}
+                                <span class="badge bg-{% if attendance.is_present %}success{% else %}danger{% endif %}">
+                                    {% if attendance.is_present %}Present{% else %}Absent{% endif %}
+                                </span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No attendance marked for today.</p>
+                    <button id="markAttendanceBtn" class="btn btn-primary">
+                        <i class="bi bi-camera"></i> Mark Attendance
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">Registered Units</h5>
+    </div>
+    <div class="card-body">
+        <ul class="list-group">
+            {% for unit in registered_units %}
+                <li class="list-group-item">{{ unit.name }} ({{ unit.code }})</li>
+            {% empty %}
+                <li class="list-group-item">No units registered</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<div class="modal fade" id="attendanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mark Attendance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="cameraContainer" class="mb-3">
+                    <video id="video" width="400" height="300" autoplay></video>
+                </div>
+                <div id="attendanceResult" class="alert" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const markAttendanceBtn = document.getElementById('markAttendanceBtn');
+    if (markAttendanceBtn) {
+        markAttendanceBtn.addEventListener('click', function() {
+            // Show loading state
+            markAttendanceBtn.disabled = true;
+            markAttendanceBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+            
+            // Call the mark attendance view
+            fetch("{% url 'mark_attendance' %}", {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert(data.message);
+                    markAttendanceBtn.disabled = false;
+                    markAttendanceBtn.innerHTML = '<i class="bi bi-camera"></i> Mark Attendance';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while marking attendance.');
+                markAttendanceBtn.disabled = false;
+                markAttendanceBtn.innerHTML = '<i class="bi bi-camera"></i> Mark Attendance';
+            });
+        });
+    }
+});
+</script>
+{% endblock %}
