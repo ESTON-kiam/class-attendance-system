@@ -109,6 +109,10 @@ class FaceRecognition:
                     print(f"Failed to load/process image for {student.admission_number}")
                     continue
 
+                # Debug: Print image info before face detection
+                print(
+                    f"Debug: Image before face detection - shape={rgb_img.shape}, dtype={rgb_img.dtype}, min={rgb_img.min()}, max={rgb_img.max()}")
+
                 # Debug: Save the cleaned image for inspection
                 debug_dir = os.path.join(settings.MEDIA_ROOT, "debug")
                 os.makedirs(debug_dir, exist_ok=True)
@@ -149,27 +153,40 @@ class FaceRecognition:
 
         print(f"Detecting faces in image with shape {image.shape}, dtype {image.dtype}")
 
-        # Ensure image is in correct format
-        if len(image.shape) != 3 or image.shape[2] != 3:
-            print(f"Invalid image shape for face detection: {image.shape}")
+        # Make a copy of the image to avoid modifying the original
+        img = image.copy()
+
+        # Ensure proper format - face_recognition needs RGB uint8
+        # First convert to uint8 if needed
+        if img.dtype != np.uint8:
+            print(f"Converting image from {img.dtype} to uint8")
+            img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+
+        # Then handle channel conversion
+        if len(img.shape) == 2:  # Grayscale
+            print("Converting grayscale to RGB")
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        elif len(img.shape) == 3:
+            if img.shape[2] == 4:  # RGBA
+                print("Converting RGBA to RGB")
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            elif img.shape[2] == 3:  # Could be BGR or RGB
+                # OpenCV reads images as BGR, convert to RGB if from OpenCV
+                if 'cv2' in str(img.__class__):
+                    print("Converting BGR to RGB")
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Verify image format is correct
+        if len(img.shape) != 3 or img.shape[2] != 3 or img.dtype != np.uint8:
+            print(f"Image format is still incorrect: shape={img.shape}, dtype={img.dtype}")
             return []
-
-        if image.dtype != np.uint8:
-            print(f"Converting image from {image.dtype} to uint8")
-            image = image.astype(np.uint8)
-
-        # Convert to RGB if needed (face_recognition expects RGB)
-        if image.shape[2] == 4:
-            image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-        elif image.shape[2] == 1:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
         face_locations = []
 
         # Method 1: HOG (fastest)
         try:
             print("Trying HOG face detection...")
-            face_locations = face_recognition.face_locations(image, model="hog")
+            face_locations = face_recognition.face_locations(img, model="hog")
             if face_locations:
                 print(f"HOG found {len(face_locations)} faces")
                 return face_locations
@@ -179,7 +196,7 @@ class FaceRecognition:
         # Method 2: CNN (more accurate but slower)
         try:
             print("Trying CNN face detection...")
-            face_locations = face_recognition.face_locations(image, model="cnn")
+            face_locations = face_recognition.face_locations(img, model="cnn")
             if face_locations:
                 print(f"CNN found {len(face_locations)} faces")
                 return face_locations
@@ -189,7 +206,7 @@ class FaceRecognition:
         # Method 3: Try with resized image
         try:
             print("Trying resized image face detection...")
-            small_img = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
+            small_img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
             face_locations = face_recognition.face_locations(small_img)
             if face_locations:
                 print(f"Resized image found {len(face_locations)} faces")
@@ -251,7 +268,8 @@ class FaceRecognition:
                         'confidence': float(confidence),
                         'face_location': face_locations[i]
                     })
-                    print(f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {confidence:.2f}")
+                    print(
+                        f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {confidence:.2f}")
 
             return recognized_data
 

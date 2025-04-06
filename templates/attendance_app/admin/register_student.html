@@ -127,27 +127,22 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="video-container mb-2 position-relative">
-                                <video id="webcam" autoplay playsinline width="100%" class="border rounded"></video>
-                                <canvas id="face-overlay" class="position-absolute top-0 left-0" style="pointer-events: none;"></canvas>
-                                <div class="position-absolute top-0 left-0 w-100 h-100" style="pointer-events: none;">
-                                    <div class="guide-square"></div>
+                                <video id="webcam" autoplay playsinline class="border rounded"></video>
+                                <div class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;">
+                                    <div id="guide-square" class="guide-square"></div>
                                 </div>
                             </div>
-                            <div class="d-flex gap-2">
-                                <button type="button" id="capture-btn" class="btn btn-primary" disabled>
-                                    <span id="capture-text">Capture Photo</span>
-                                    <span id="face-detecting" class="d-none">
-                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                        Aligning face...
-                                    </span>
-                                </button>
-                                <button type="button" id="retry-btn" class="btn btn-outline-secondary" style="display:none;">Retry</button>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" id="start-camera-btn" class="btn btn-secondary">Start Camera</button>
+                                <button type="button" id="capture-btn" class="btn btn-primary d-none">Capture Photo</button>
+                                <button type="button" id="retry-btn" class="btn btn-outline-secondary d-none">Retry</button>
                             </div>
+                            <div id="camera-status" class="mt-2 small text-muted"></div>
                         </div>
                         <div class="col-md-6">
                             <div class="preview-container">
-                                <canvas id="canvas" width="300" height="225" class="border rounded d-none"></canvas>
-                                <div id="preview-placeholder" class="text-muted text-center py-5">
+                                <canvas id="canvas" width="300" height="300" class="border rounded d-none"></canvas>
+                                <div id="preview-placeholder" class="text-muted text-center py-5 border rounded">
                                     Your captured image will appear here
                                 </div>
                             </div>
@@ -214,213 +209,165 @@
 <!-- Load face-api.js from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
-<!-- Enhanced Webcam with Virtual Square Guide -->
+<!-- Simplified Webcam Capture Script -->
 <script>
-document.addEventListener('DOMContentLoaded', async function() {
-    // File input label update
-    const fileInput = document.querySelector('#id_photo');
-    if (fileInput) {
-        fileInput.addEventListener('change', function(e) {
-            const fileName = e.target.files[0]?.name || 'Choose file...';
-            document.querySelector('.custom-file-label').textContent = fileName;
-            document.getElementById('photo_data').value = '';
-            hideCanvas();
-            stopFaceDetection();
-        });
-    }
-
-    // Webcam elements
+document.addEventListener('DOMContentLoaded', function() {
+    // Elements
     const video = document.getElementById('webcam');
-    const faceOverlay = document.getElementById('face-overlay');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const startCameraBtn = document.getElementById('start-camera-btn');
     const captureBtn = document.getElementById('capture-btn');
     const retryBtn = document.getElementById('retry-btn');
     const photoDataInput = document.getElementById('photo_data');
     const previewPlaceholder = document.getElementById('preview-placeholder');
-    const captureText = document.getElementById('capture-text');
-    const faceDetecting = document.getElementById('face-detecting');
+    const guideSquare = document.getElementById('guide-square');
+    const cameraStatus = document.getElementById('camera-status');
+    const fileInput = document.querySelector('#id_photo');
     
-    let faceDetectionInterval;
-    let isFaceDetected = false;
-    let stream;
-    let guideSquare;
-
-    // Calculate guide square dimensions (60% of smaller dimension)
-    function calculateGuideSquare() {
-        const minDimension = Math.min(video.videoWidth, video.videoHeight);
-        const squareSize = minDimension * 0.6;
-        return {
-            x: (video.videoWidth - squareSize) / 2,
-            y: (video.videoHeight - squareSize) / 2,
-            size: squareSize
-        };
-    }
-
-    // Load face-api.js models
-    async function loadModels() {
-        try {
-            await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-            await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-            return true;
-        } catch (error) {
-            console.error("Error loading face detection models:", error);
-            return false;
-        }
-    }
-
-    // Start webcam with face detection
-    async function startWebcam() {
-        const modelsLoaded = await loadModels();
-        if (!modelsLoaded) {
-            alert("Face detection features unavailable. You can still upload a photo.");
-            return;
-        }
-
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    width: 640, 
-                    height: 480,
-                    facingMode: 'user',
-                    focusMode: 'continuous'  // Try to enable continuous focus
-                } 
-            });
-            video.srcObject = stream;
-            
-            // Set overlay dimensions to match video
-            video.addEventListener('play', () => {
-                faceOverlay.width = video.videoWidth;
-                faceOverlay.height = video.videoHeight;
-                guideSquare = calculateGuideSquare();
-                startFaceDetection();
-            });
-        } catch (error) {
-            console.error("Webcam error: ", error);
-            alert("Could not access the webcam. Please check permissions.");
-        }
-    }
-
-    // Face detection function with guide square
-    function startFaceDetection() {
-        faceDetectionInterval = setInterval(async () => {
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            
-            const detections = await faceapi.detectAllFaces(
-                video, 
-                new faceapi.TinyFaceDetectorOptions()
-            ).withFaceLandmarks();
-            
-            const faceOverlayCtx = faceOverlay.getContext('2d');
-            faceOverlayCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
-            
-            // Draw guide square
-            faceOverlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-            faceOverlayCtx.lineWidth = 2;
-            faceOverlayCtx.setLineDash([5, 5]);
-            faceOverlayCtx.strokeRect(guideSquare.x, guideSquare.y, guideSquare.size, guideSquare.size);
-            faceOverlayCtx.setLineDash([]);
-            
-            // Draw face detection box and check position
-            if (detections.length > 0) {
-                const detection = detections[0]; // Use primary face only
-                const faceBox = detection.detection.box;
-                
-                // Check if face is within guide square
-                const isFaceCentered = (
-                    faceBox.x >= guideSquare.x &&
-                    faceBox.y >= guideSquare.y &&
-                    (faceBox.x + faceBox.width) <= (guideSquare.x + guideSquare.size) &&
-                    (faceBox.y + faceBox.height) <= (guideSquare.y + guideSquare.size)
-                );
-                
-                // Draw face box with appropriate color
-                faceOverlayCtx.strokeStyle = isFaceCentered ? '#28a745' : '#dc3545';
-                faceOverlayCtx.lineWidth = 2;
-                faceOverlayCtx.strokeRect(faceBox.x, faceBox.y, faceBox.width, faceBox.height);
-                
-                isFaceDetected = isFaceCentered;
-                captureBtn.disabled = !isFaceCentered;
-                faceDetecting.classList.toggle('d-none', isFaceCentered);
-                captureText.classList.toggle('d-none', !isFaceCentered);
-            } else {
-                isFaceDetected = false;
-                captureBtn.disabled = true;
-                faceDetecting.classList.remove('d-none');
-                captureText.classList.add('d-none');
-            }
-        }, 300);
-    }
-
-    // Stop face detection
-    function stopFaceDetection() {
-        if (faceDetectionInterval) {
-            clearInterval(faceDetectionInterval);
-        }
-        const faceOverlayCtx = faceOverlay.getContext('2d');
-        faceOverlayCtx.clearRect(0, 0, faceOverlay.width, faceOverlay.height);
-    }
-
-    // Capture photo from webcam (cropped to guide square)
+    let stream = null;
+    let squareSize = 0;
+    let videoWidth = 0;
+    let videoHeight = 0;
+    
+    // File input handler
+    fileInput.addEventListener('change', function(e) {
+        const fileName = e.target.files[0]?.name || 'Choose file...';
+        document.querySelector('.custom-file-label').textContent = fileName;
+        photoDataInput.value = '';
+        resetCameraUI();
+        stopCamera();
+    });
+    
+    // Start camera button
+    startCameraBtn.addEventListener('click', function() {
+        startCamera();
+    });
+    
+    // Capture photo button
     captureBtn.addEventListener('click', function() {
-        if (!isFaceDetected) return;
+        capturePhoto();
+    });
+    
+    // Retry button
+    retryBtn.addEventListener('click', function() {
+        resetCameraUI();
+    });
+    
+    // Start camera function - simplified, no face detection
+    async function startCamera() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
+            });
+            
+            video.srcObject = stream;
+            cameraStatus.textContent = "Camera started. Position your face in the square and click Capture.";
+            
+            // Wait for video to load and set dimensions
+            video.onloadedmetadata = function() {
+                videoWidth = video.videoWidth;
+                videoHeight = video.videoHeight;
+                
+                // Calculate square size (60% of the smaller dimension)
+                squareSize = Math.min(videoWidth, videoHeight) * 0.6;
+                
+                // Set video container dimensions
+                video.parentElement.style.width = videoWidth + 'px';
+                video.parentElement.style.height = videoHeight + 'px';
+                
+                // Position guide square in center
+                const squareLeft = (videoWidth - squareSize) / 2;
+                const squareTop = (videoHeight - squareSize) / 2;
+                
+                guideSquare.style.width = squareSize + 'px';
+                guideSquare.style.height = squareSize + 'px';
+                guideSquare.style.left = squareLeft + 'px';
+                guideSquare.style.top = squareTop + 'px';
+                
+                // Show capture button
+                startCameraBtn.classList.add('d-none');
+                captureBtn.classList.remove('d-none');
+            };
+            
+        } catch (error) {
+            console.error("Camera error:", error);
+            cameraStatus.textContent = "Camera access failed. Please check permissions or try uploading a photo instead.";
+            cameraStatus.classList.add('text-danger');
+        }
+    }
+    
+    // Capture photo function - simplified, no face detection
+    function capturePhoto() {
+        if (!stream) return;
         
+        // Calculate the square position
+        const squareLeft = (videoWidth - squareSize) / 2;
+        const squareTop = (videoHeight - squareSize) / 2;
+        
+        // Set canvas dimensions and draw the cropped image
+        canvas.width = squareSize;
+        canvas.height = squareSize;
+        
+        ctx.drawImage(
+            video,
+            squareLeft, squareTop, squareSize, squareSize,  // Source coordinates
+            0, 0, squareSize, squareSize                   // Destination coordinates
+        );
+        
+        // Show the captured image
         previewPlaceholder.classList.add('d-none');
         canvas.classList.remove('d-none');
         
-        // Set canvas dimensions to match guide square
-        canvas.width = guideSquare.size;
-        canvas.height = guideSquare.size;
+        // Save image data
+        photoDataInput.value = canvas.toDataURL('image/jpeg', 0.9);
+        fileInput.value = '';
+        document.querySelector('.custom-file-label').textContent = 'Choose file...';
         
-        // Draw cropped image (guide square area only)
-        ctx.drawImage(
-            video, 
-            guideSquare.x, guideSquare.y, guideSquare.size, guideSquare.size,  // Source (crop)
-            0, 0, guideSquare.size, guideSquare.size                          // Destination
-        );
-        
-        // Convert to data URL and store in hidden field
-        const imageData = canvas.toDataURL('image/jpeg', 0.9);
-        photoDataInput.value = imageData;
-        
-        // Clear any file input
-        if (fileInput) {
-            fileInput.value = '';
-            document.querySelector('.custom-file-label').textContent = 'Choose file...';
-        }
-        
-        // Show retry button
-        captureBtn.style.display = 'none';
-        retryBtn.style.display = 'block';
-        
-        // Stop face detection after capture
-        stopFaceDetection();
-    });
-
-    // Retry capture
-    retryBtn.addEventListener('click', function() {
-        hideCanvas();
-        photoDataInput.value = '';
-        captureBtn.style.display = 'block';
-        retryBtn.style.display = 'none';
-        startFaceDetection();
-    });
-
-    function hideCanvas() {
+        // Update buttons
+        captureBtn.classList.add('d-none');
+        retryBtn.classList.remove('d-none');
+    }
+    
+    // Reset camera UI
+    function resetCameraUI() {
         canvas.classList.add('d-none');
         previewPlaceholder.classList.remove('d-none');
+        photoDataInput.value = '';
+        
+        if (stream) {
+            captureBtn.classList.remove('d-none');
+            retryBtn.classList.add('d-none');
+        } else {
+            startCameraBtn.classList.remove('d-none');
+            captureBtn.classList.add('d-none');
+            retryBtn.classList.add('d-none');
+        }
     }
-
-    // Cleanup when leaving page
+    
+    // Stop camera
+    function stopCamera() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+            video.srcObject = null;
+        }
+        
+        startCameraBtn.classList.remove('d-none');
+        captureBtn.classList.add('d-none');
+        retryBtn.classList.add('d-none');
+    }
+    
+    // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
-        stopFaceDetection();
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
         }
     });
-
-    // Initialize webcam
-    startWebcam();
 });
 </script>
 
@@ -430,38 +377,43 @@ document.addEventListener('DOMContentLoaded', async function() {
         background: #f8f9fa;
         border-radius: 0.25rem;
         overflow: hidden;
-    }
-    #face-overlay {
         width: 100%;
-        height: auto;
+        max-width: 640px;
+        margin: 0 auto;
     }
+    
+    #webcam {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+    
     #canvas {
         max-width: 100%;
         height: auto;
+        object-fit: contain;
     }
+    
     #preview-placeholder {
-        border: 1px dashed #dee2e6;
-        border-radius: 0.25rem;
+        min-height: 200px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
-    .video-container canvas {
-        width: 100%;
-        height: auto;
-    }
+    
     .guide-square {
         position: absolute;
-        top: 20%;
-        left: 20%;
-        width: 60%;
-        height: 60%;
         border: 2px dashed rgba(255, 255, 255, 0.7);
         border-radius: 5px;
         pointer-events: none;
     }
+    
     .units-checkbox-container {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 0.5rem;
     }
+    
     .custom-file-label::after {
         content: "Browse";
     }

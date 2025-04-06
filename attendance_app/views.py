@@ -1,16 +1,16 @@
 from django.contrib import messages
+from django.db import IntegrityError
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth import login, authenticate
+
 from django.http import JsonResponse, HttpResponse
-from django.conf import settings
 
 from .face_recognition import FaceRecognition
 from .models import Course, Unit, Student, Attendance
 from .forms import CourseForm, UnitForm, StudentRegistrationForm, StudentUpdateForm
 
 import cv2
-import os
+
 from datetime import datetime
 
 
@@ -107,6 +107,8 @@ def register_student(request):
         'form': form,
         'form_errors': form.errors if request.method == 'POST' else None
     })
+
+
 @login_required
 @user_passes_test(is_admin)
 def edit_student(request, pk):

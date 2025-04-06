@@ -33,7 +33,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header bg-success text-white">
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show loading state
             markAttendanceBtn.disabled = true;
             markAttendanceBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
-            
+
             // Call the mark attendance view
             fetch("{% url 'mark_attendance' %}", {
                 method: 'POST',
