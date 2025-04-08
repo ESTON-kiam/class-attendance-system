@@ -13,40 +13,69 @@ class FaceRecognition:
         self.known_admission_numbers = []
         self.min_confidence = 0.6  # Minimum confidence threshold for recognition
 
+    def ensure_supported_format(self, image):
+        """
+        Convert image to supported format (RGB uint8) for face recognition
+        Returns the converted image or None if conversion fails
+        """
+        try:
+            # Handle None input
+            if image is None:
+                return None
+
+            # Make a copy to avoid modifying original
+            img = image.copy()
+
+            # Convert to uint8 if needed
+            if img.dtype != np.uint8:
+                if img.max() <= 1.0:  # Float image in 0-1 range
+                    img = (img * 255).astype(np.uint8)
+                else:
+                    img = img.astype(np.uint8)
+
+            # Handle grayscale (2D) images
+            if len(img.shape) == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            # Handle RGBA (4 channel) images
+            elif len(img.shape) == 3 and img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            # Handle BGR (3 channel) images
+            elif len(img.shape) == 3 and img.shape[2] == 3:
+                # Check if it's BGR by comparing with OpenCV conversion
+                rgb_from_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                if not np.array_equal(img, rgb_from_bgr):
+                    img = rgb_from_bgr
+
+            # Final validation
+            if len(img.shape) != 3 or img.shape[2] != 3 or img.dtype != np.uint8:
+                print(f"Final validation failed: shape={img.shape}, dtype={img.dtype}")
+                return None
+
+            return img
+        except Exception as e:
+            print(f"Error in ensure_supported_format: {str(e)}")
+            return None
+
     def clean_image(self, image):
         """Apply preprocessing to clean and standardize the image"""
         try:
-            # If image is already RGB (3 channels)
-            if len(image.shape) == 3 and image.shape[2] == 3:
-                # Check if it's actually BGR (OpenCV default)
-                if image.dtype == np.uint8:
-                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                return image
+            # First ensure supported format
+            img = self.ensure_supported_format(image)
+            if img is None:
+                return None
 
-            # Convert grayscale to RGB
-            if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-
-            # Convert RGBA to RGB
-            if len(image.shape) == 3 and image.shape[2] == 4:
-                image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-
-            # Ensure uint8 dtype
-            if image.dtype != np.uint8:
-                image = image.astype(np.uint8)
-
-            # Normalize lighting
-            lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+            # Normalize lighting using CLAHE
+            lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
             l, a, b = cv2.split(lab)
             clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
             cl = clahe.apply(l)
             limg = cv2.merge((cl, a, b))
-            image = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
+            final_img = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
 
-            return image
+            return final_img
         except Exception as e:
             print(f"Error in clean_image: {str(e)}")
-            return image
+            return None
 
     def load_and_preprocess_image(self, image_path):
         """Load and preprocess an image from file"""
@@ -54,18 +83,28 @@ class FaceRecognition:
             # Try with OpenCV first
             image = cv2.imread(image_path)
             if image is not None:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 print(f"Loaded with OpenCV. Shape: {image.shape}, dtype: {image.dtype}")
+                # Convert BGR to RGB later in ensure_supported_format
             else:
                 # Fallback to PIL if OpenCV fails
                 with Image.open(image_path) as pil_img:
-                    if pil_img.mode != 'RGB':
-                        pil_img = pil_img.convert('RGB')
-                    image = np.array(pil_img)
-                    print(f"Loaded with PIL. Shape: {image.shape}, dtype: {image.dtype}")
+                    print(f"Loaded with PIL. Mode: {pil_img.mode}")
+                    if pil_img.mode == 'L':  # Grayscale
+                        image = np.array(pil_img)
+                    elif pil_img.mode == 'RGBA':
+                        image = np.array(pil_img.convert('RGBA'))
+                    else:
+                        image = np.array(pil_img.convert('RGB'))
+                    print(f"Converted to array. Shape: {image.shape}, dtype: {image.dtype}")
+
+            # Ensure supported format
+            supported_image = self.ensure_supported_format(image)
+            if supported_image is None:
+                print("Failed to convert to supported format")
+                return None
 
             # Clean the image
-            cleaned_image = self.clean_image(image)
+            cleaned_image = self.clean_image(supported_image)
             if cleaned_image is None:
                 print("Image cleaning failed")
                 return None
@@ -93,7 +132,7 @@ class FaceRecognition:
                 print(f"No photo for student {student.admission_number}")
                 continue
 
-            # FIXED: Proper path handling with normpath
+            # Proper path handling with normpath
             image_path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, str(student.photo)))
             print(f"\nProcessing student {student.admission_number}")
             print(f"Image path: {image_path}")
@@ -110,8 +149,7 @@ class FaceRecognition:
                     continue
 
                 # Debug: Print image info before face detection
-                print(
-                    f"Debug: Image before face detection - shape={rgb_img.shape}, dtype={rgb_img.dtype}, min={rgb_img.min()}, max={rgb_img.max()}")
+                print(f"Debug: Image before face detection - shape={rgb_img.shape}, dtype={rgb_img.dtype}, min={rgb_img.min()}, max={rgb_img.max()}")
 
                 # Debug: Save the cleaned image for inspection
                 debug_dir = os.path.join(settings.MEDIA_ROOT, "debug")
@@ -153,32 +191,10 @@ class FaceRecognition:
 
         print(f"Detecting faces in image with shape {image.shape}, dtype {image.dtype}")
 
-        # Make a copy of the image to avoid modifying the original
-        img = image.copy()
-
-        # Ensure proper format - face_recognition needs RGB uint8
-        # First convert to uint8 if needed
-        if img.dtype != np.uint8:
-            print(f"Converting image from {img.dtype} to uint8")
-            img = (img * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
-
-        # Then handle channel conversion
-        if len(img.shape) == 2:  # Grayscale
-            print("Converting grayscale to RGB")
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        elif len(img.shape) == 3:
-            if img.shape[2] == 4:  # RGBA
-                print("Converting RGBA to RGB")
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-            elif img.shape[2] == 3:  # Could be BGR or RGB
-                # OpenCV reads images as BGR, convert to RGB if from OpenCV
-                if 'cv2' in str(img.__class__):
-                    print("Converting BGR to RGB")
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        # Verify image format is correct
-        if len(img.shape) != 3 or img.shape[2] != 3 or img.dtype != np.uint8:
-            print(f"Image format is still incorrect: shape={img.shape}, dtype={img.dtype}")
+        # Ensure the image is in supported format
+        supported_img = self.ensure_supported_format(image)
+        if supported_img is None:
+            print("Could not convert image to supported format for face detection")
             return []
 
         face_locations = []
@@ -186,7 +202,7 @@ class FaceRecognition:
         # Method 1: HOG (fastest)
         try:
             print("Trying HOG face detection...")
-            face_locations = face_recognition.face_locations(img, model="hog")
+            face_locations = face_recognition.face_locations(supported_img, model="hog")
             if face_locations:
                 print(f"HOG found {len(face_locations)} faces")
                 return face_locations
@@ -196,7 +212,7 @@ class FaceRecognition:
         # Method 2: CNN (more accurate but slower)
         try:
             print("Trying CNN face detection...")
-            face_locations = face_recognition.face_locations(img, model="cnn")
+            face_locations = face_recognition.face_locations(supported_img, model="cnn")
             if face_locations:
                 print(f"CNN found {len(face_locations)} faces")
                 return face_locations
@@ -206,7 +222,7 @@ class FaceRecognition:
         # Method 3: Try with resized image
         try:
             print("Trying resized image face detection...")
-            small_img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
+            small_img = cv2.resize(supported_img, (0, 0), fx=0.5, fy=0.5)
             face_locations = face_recognition.face_locations(small_img)
             if face_locations:
                 print(f"Resized image found {len(face_locations)} faces")
@@ -229,10 +245,14 @@ class FaceRecognition:
             return []
 
         try:
-            # Clean and preprocess the webcam frame
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            cleaned_frame = self.clean_image(rgb_frame)
+            # Convert frame to supported format
+            supported_frame = self.ensure_supported_format(frame)
+            if supported_frame is None:
+                print("Failed to convert webcam frame to supported format")
+                return []
 
+            # Clean the frame
+            cleaned_frame = self.clean_image(supported_frame)
             if cleaned_frame is None:
                 print("Failed to clean webcam frame")
                 return []
@@ -268,8 +288,7 @@ class FaceRecognition:
                         'confidence': float(confidence),
                         'face_location': face_locations[i]
                     })
-                    print(
-                        f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {confidence:.2f}")
+                    print(f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {confidence:.2f}")
 
             return recognized_data
 
