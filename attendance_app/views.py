@@ -186,7 +186,7 @@ def mark_attendance(request):
         if not ret:
             break
 
-        # Recognize faces in the frame
+
         recognized_ids = face_recognizer.recognize_face(frame)
 
         if student.id in recognized_ids:

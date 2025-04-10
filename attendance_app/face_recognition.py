@@ -23,10 +23,10 @@ class FaceRecognition:
             if image is None:
                 return None
 
-            # Make a copy to avoid modifying original
+
             img = image.copy()
 
-            # Convert to uint8 if needed
+
             if img.dtype != np.uint8:
                 if img.max() <= 1.0:  # Float image in 0-1 range
                     img = (img * 255).astype(np.uint8)
