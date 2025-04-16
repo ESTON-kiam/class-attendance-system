@@ -4,6 +4,10 @@ import os
 from django.conf import settings
 from PIL import Image
 from insightface.app import FaceAnalysis
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class FaceRecognition:
@@ -12,10 +16,36 @@ class FaceRecognition:
         self.known_face_ids = []
         self.known_admission_numbers = []
         self.min_confidence = 0.6  # Minimum confidence threshold for recognition
+        self.app = None
 
-        # Initialize InsightFace app
-        self.app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-        self.app.prepare(ctx_id=0, det_size=(640, 640))
+        self._initialize_face_analysis()
+
+    def _initialize_face_analysis(self):
+        """Initialize InsightFace with multiple fallback options"""
+        model_priority = [
+            {'name': 'buffalo_l', 'det_size': (640, 640)},
+            {'name': 'buffalo_s', 'det_size': (640, 640)},
+            {'name': 'buffalo_sc', 'det_size': (320, 320)}
+        ]
+
+        for model in model_priority:
+            try:
+                logger.info(f"Attempting to initialize FaceAnalysis with model: {model['name']}")
+                self.app = FaceAnalysis(name=model['name'])
+                self.app.prepare(ctx_id=0, det_size=model['det_size'])
+
+                # Test with dummy image to verify working
+                test_img = np.zeros((100, 100, 3), dtype=np.uint8)
+                test_faces = self.app.get(test_img)
+                logger.info(f"Successfully initialized with model: {model['name']}")
+                return
+            except Exception as e:
+                logger.error(f"Failed to initialize with {model['name']}: {str(e)}")
+                self.app = None
+                continue
+
+        logger.error("All FaceAnalysis initialization attempts failed")
+        self.app = None
 
     def ensure_supported_format(self, image):
         """Convert image to RGB uint8 format for InsightFace"""
@@ -39,18 +69,17 @@ class FaceRecognition:
                 img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
             # Handle BGR (3 channel) images
             elif len(img.shape) == 3 and img.shape[2] == 3:
-                # Check if it's BGR by comparing with OpenCV conversion
                 rgb_from_bgr = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 if not np.array_equal(img, rgb_from_bgr):
                     img = rgb_from_bgr
 
             if len(img.shape) != 3 or img.shape[2] != 3 or img.dtype != np.uint8:
-                print(f"Final validation failed: shape={img.shape}, dtype={img.dtype}")
+                logger.warning(f"Final validation failed: shape={img.shape}, dtype={img.dtype}")
                 return None
 
             return img
         except Exception as e:
-            print(f"Error in ensure_supported_format: {str(e)}")
+            logger.error(f"Error in ensure_supported_format: {str(e)}")
             return None
 
     def clean_image(self, image):
@@ -70,7 +99,7 @@ class FaceRecognition:
 
             return final_img
         except Exception as e:
-            print(f"Error in clean_image: {str(e)}")
+            logger.error(f"Error in clean_image: {str(e)}")
             return None
 
     def load_and_preprocess_image(self, image_path):
@@ -91,94 +120,103 @@ class FaceRecognition:
             # Ensure supported format
             supported_image = self.ensure_supported_format(image)
             if supported_image is None:
-                print("Failed to convert to supported format")
+                logger.warning("Failed to convert to supported format")
                 return None
 
             # Clean the image
             cleaned_image = self.clean_image(supported_image)
             if cleaned_image is None:
-                print("Image cleaning failed")
+                logger.warning("Image cleaning failed")
                 return None
 
             return cleaned_image
         except Exception as e:
-            print(f"Error loading image {image_path}: {str(e)}")
+            logger.error(f"Error loading image {image_path}: {str(e)}")
             return None
 
     def load_student_images(self):
         """Load and preprocess all student images using InsightFace"""
         from .models import Student
-        students = Student.objects.all()
 
-        print(f"Loading {len(students)} student images...")
+        if self.app is None:
+            logger.error("Cannot load student images - FaceAnalysis not initialized")
+            return False
+
+        students = Student.objects.all()
+        logger.info(f"Loading {len(students)} student images...")
 
         # Clear existing data
         self.known_face_embeddings = []
         self.known_face_ids = []
         self.known_admission_numbers = []
 
+        success_count = 0
         for student in students:
             if not student.photo:
-                print(f"No photo for student {student.admission_number}")
+                logger.warning(f"No photo for student {student.admission_number}")
                 continue
 
             image_path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, str(student.photo)))
-            print(f"\nProcessing student {student.admission_number}")
-            print(f"Image path: {image_path}")
+            logger.debug(f"Processing student {student.admission_number}")
+            logger.debug(f"Image path: {image_path}")
 
             if not os.path.exists(image_path):
-                print(f"Image not found: {image_path}")
+                logger.warning(f"Image not found: {image_path}")
                 continue
 
             try:
                 # Load and clean the image
                 rgb_img = self.load_and_preprocess_image(image_path)
                 if rgb_img is None:
-                    print(f"Failed to load/process image for {student.admission_number}")
+                    logger.warning(f"Failed to load/process image for {student.admission_number}")
                     continue
 
                 # Detect faces using InsightFace
                 faces = self.app.get(rgb_img)
                 if not faces:
-                    print(f"No faces detected for {student.admission_number}")
+                    logger.warning(f"No faces detected for {student.admission_number}")
                     continue
 
                 # Use the first face found (assuming one face per student image)
                 face = faces[0]
                 if face.det_score < 0.5:  # Minimum detection confidence
-                    print(f"Face detection confidence too low: {face.det_score}")
+                    logger.warning(f"Face detection confidence too low: {face.det_score}")
                     continue
 
                 # Store the embedding and student info
                 self.known_face_embeddings.append(face.embedding)
                 self.known_face_ids.append(student.id)
                 self.known_admission_numbers.append(student.admission_number)
-                print(f"✓ Processed student {student.admission_number}")
+                success_count += 1
+                logger.info(f"Processed student {student.admission_number}")
 
             except Exception as e:
-                print(f"Error processing {student.admission_number}: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"Error processing {student.admission_number}: {str(e)}", exc_info=True)
 
-        print(f"\nLoaded {len(self.known_face_embeddings)} face embeddings from {len(students)} students")
+        logger.info(f"Loaded {success_count} face embeddings from {len(students)} students")
+        return success_count > 0
+
+    def is_ready(self):
+        """Check if the system is ready for recognition"""
+        return self.app is not None and len(self.known_face_embeddings) > 0
 
     def process_webcam_frame(self, frame):
         """Process a frame from webcam and compare with stored faces using InsightFace"""
-        if len(self.known_face_embeddings) == 0:
-            print("Warning: No known faces loaded")
+        if not self.is_ready():
+            logger.warning("System not ready for recognition")
             return []
 
         try:
             # Convert frame to supported format
             supported_frame = self.ensure_supported_format(frame)
             if supported_frame is None:
-                print("Failed to convert webcam frame to supported format")
+                logger.warning("Failed to convert webcam frame to supported format")
                 return []
 
             # Clean the frame
             cleaned_frame = self.clean_image(supported_frame)
             if cleaned_frame is None:
-                print("Failed to clean webcam frame")
+                logger.warning("Failed to clean webcam frame")
                 return []
 
             # Detect faces in the frame using InsightFace
@@ -193,7 +231,7 @@ class FaceRecognition:
                 if not self.known_face_embeddings:
                     continue
 
-                # Convert embeddings to numpy arrays if they aren't already
+                # Convert embeddings to numpy arrays
                 known_embeddings = np.array(self.known_face_embeddings)
                 current_embedding = np.array(face.embedding).reshape(1, -1)
 
@@ -214,13 +252,13 @@ class FaceRecognition:
                             int(face.bbox[0])  # left
                         ]
                     })
-                    print(
-                        f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {best_match_score:.2f}")
+                    logger.info(f"Recognized {self.known_admission_numbers[best_match_index]} "
+                              f"with confidence {best_match_score:.2f}")
 
             return recognized_data
 
         except Exception as e:
-            print(f"Error in process_webcam_frame: {str(e)}")
+            logger.error(f"Error in process_webcam_frame: {str(e)}", exc_info=True)
             return []
 
     def recognize_face(self, frame):
@@ -231,6 +269,9 @@ class FaceRecognition:
         """Mark attendance for recognized students"""
         from .models import Attendance
         from datetime import date
+
+        if not recognized_data:
+            return []
 
         today = date.today()
         marked = []
@@ -251,8 +292,8 @@ class FaceRecognition:
                         confidence=data['confidence']
                     )
                     marked.append(data['admission_number'])
-                    print(f"Marked attendance for {data['admission_number']}")
+                    logger.info(f"Marked attendance for {data['admission_number']}")
                 except Exception as e:
-                    print(f"Error marking attendance: {str(e)}")
+                    logger.error(f"Error marking attendance: {str(e)}", exc_info=True)
 
         return marked
