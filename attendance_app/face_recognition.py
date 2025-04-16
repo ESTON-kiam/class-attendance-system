@@ -1,31 +1,29 @@
-import face_recognition
-import numpy as np
 import cv2
-from django.conf import settings
+import numpy as np
 import os
+from django.conf import settings
 from PIL import Image
+from insightface.app import FaceAnalysis
 
 
 class FaceRecognition:
     def __init__(self):
-        self.known_face_encodings = []
+        self.known_face_embeddings = []
         self.known_face_ids = []
         self.known_admission_numbers = []
         self.min_confidence = 0.6  # Minimum confidence threshold for recognition
 
+        # Initialize InsightFace app
+        self.app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        self.app.prepare(ctx_id=0, det_size=(640, 640))
+
     def ensure_supported_format(self, image):
-        """
-        Convert image to supported format (RGB uint8) for face recognition
-        Returns the converted image or None if conversion fails
-        """
+        """Convert image to RGB uint8 format for InsightFace"""
         try:
-            # Handle None input
             if image is None:
                 return None
 
-
             img = image.copy()
-
 
             if img.dtype != np.uint8:
                 if img.max() <= 1.0:  # Float image in 0-1 range
@@ -46,7 +44,6 @@ class FaceRecognition:
                 if not np.array_equal(img, rgb_from_bgr):
                     img = rgb_from_bgr
 
-            # Final validation
             if len(img.shape) != 3 or img.shape[2] != 3 or img.dtype != np.uint8:
                 print(f"Final validation failed: shape={img.shape}, dtype={img.dtype}")
                 return None
@@ -59,7 +56,6 @@ class FaceRecognition:
     def clean_image(self, image):
         """Apply preprocessing to clean and standardize the image"""
         try:
-            # First ensure supported format
             img = self.ensure_supported_format(image)
             if img is None:
                 return None
@@ -82,20 +78,15 @@ class FaceRecognition:
         try:
             # Try with OpenCV first
             image = cv2.imread(image_path)
-            if image is not None:
-                print(f"Loaded with OpenCV. Shape: {image.shape}, dtype: {image.dtype}")
-                # Convert BGR to RGB later in ensure_supported_format
-            else:
+            if image is None:
                 # Fallback to PIL if OpenCV fails
                 with Image.open(image_path) as pil_img:
-                    print(f"Loaded with PIL. Mode: {pil_img.mode}")
                     if pil_img.mode == 'L':  # Grayscale
                         image = np.array(pil_img)
                     elif pil_img.mode == 'RGBA':
                         image = np.array(pil_img.convert('RGBA'))
                     else:
                         image = np.array(pil_img.convert('RGB'))
-                    print(f"Converted to array. Shape: {image.shape}, dtype: {image.dtype}")
 
             # Ensure supported format
             supported_image = self.ensure_supported_format(image)
@@ -109,21 +100,20 @@ class FaceRecognition:
                 print("Image cleaning failed")
                 return None
 
-            print(f"After cleaning. Shape: {cleaned_image.shape}, dtype: {cleaned_image.dtype}")
             return cleaned_image
         except Exception as e:
             print(f"Error loading image {image_path}: {str(e)}")
             return None
 
     def load_student_images(self):
-        """Load and preprocess all student images"""
+        """Load and preprocess all student images using InsightFace"""
         from .models import Student
         students = Student.objects.all()
 
         print(f"Loading {len(students)} student images...")
 
         # Clear existing data
-        self.known_face_encodings = []
+        self.known_face_embeddings = []
         self.known_face_ids = []
         self.known_admission_numbers = []
 
@@ -132,7 +122,6 @@ class FaceRecognition:
                 print(f"No photo for student {student.admission_number}")
                 continue
 
-            # Proper path handling with normpath
             image_path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, str(student.photo)))
             print(f"\nProcessing student {student.admission_number}")
             print(f"Image path: {image_path}")
@@ -148,99 +137,34 @@ class FaceRecognition:
                     print(f"Failed to load/process image for {student.admission_number}")
                     continue
 
-                # Debug: Print image info before face detection
-                print(f"Debug: Image before face detection - shape={rgb_img.shape}, dtype={rgb_img.dtype}, min={rgb_img.min()}, max={rgb_img.max()}")
-
-                # Debug: Save the cleaned image for inspection
-                debug_dir = os.path.join(settings.MEDIA_ROOT, "debug")
-                os.makedirs(debug_dir, exist_ok=True)
-                debug_filename = f"cleaned_{student.admission_number.replace('/', '_')}.jpg"
-                debug_path = os.path.join(debug_dir, debug_filename)
-                cv2.imwrite(debug_path, cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
-                print(f"Saved cleaned image to {debug_path}")
-
-                # Try multiple face detection methods
-                face_locations = self.detect_faces(rgb_img)
-                if not face_locations:
+                # Detect faces using InsightFace
+                faces = self.app.get(rgb_img)
+                if not faces:
                     print(f"No faces detected for {student.admission_number}")
                     continue
 
-                # Get encodings for all faces found
-                face_encodings = face_recognition.face_encodings(rgb_img, face_locations)
-                if face_encodings:
-                    for encoding in face_encodings:
-                        self.known_face_encodings.append(encoding)
-                        self.known_face_ids.append(student.id)
-                        self.known_admission_numbers.append(student.admission_number)
-                    print(f"✓ Processed student {student.admission_number}")
-                else:
-                    print(f"No face encodings generated for {student.admission_number}")
+                # Use the first face found (assuming one face per student image)
+                face = faces[0]
+                if face.det_score < 0.5:  # Minimum detection confidence
+                    print(f"Face detection confidence too low: {face.det_score}")
+                    continue
+
+                # Store the embedding and student info
+                self.known_face_embeddings.append(face.embedding)
+                self.known_face_ids.append(student.id)
+                self.known_admission_numbers.append(student.admission_number)
+                print(f"✓ Processed student {student.admission_number}")
 
             except Exception as e:
                 print(f"Error processing {student.admission_number}: {str(e)}")
                 import traceback
                 traceback.print_exc()
 
-        print(f"\nLoaded {len(self.known_face_encodings)} face encodings from {len(students)} students")
-
-    def detect_faces(self, image):
-        """Detect faces using multiple methods with fallbacks"""
-        if image is None:
-            print("No image provided for face detection")
-            return []
-
-        print(f"Detecting faces in image with shape {image.shape}, dtype {image.dtype}")
-
-        # Ensure the image is in supported format
-        supported_img = self.ensure_supported_format(image)
-        if supported_img is None:
-            print("Could not convert image to supported format for face detection")
-            return []
-
-        face_locations = []
-
-        # Method 1: HOG (fastest)
-        try:
-            print("Trying HOG face detection...")
-            face_locations = face_recognition.face_locations(supported_img, model="hog")
-            if face_locations:
-                print(f"HOG found {len(face_locations)} faces")
-                return face_locations
-        except Exception as e:
-            print(f"HOG detection failed: {str(e)}")
-
-        # Method 2: CNN (more accurate but slower)
-        try:
-            print("Trying CNN face detection...")
-            face_locations = face_recognition.face_locations(supported_img, model="cnn")
-            if face_locations:
-                print(f"CNN found {len(face_locations)} faces")
-                return face_locations
-        except Exception as e:
-            print(f"CNN detection failed: {str(e)}")
-
-        # Method 3: Try with resized image
-        try:
-            print("Trying resized image face detection...")
-            small_img = cv2.resize(supported_img, (0, 0), fx=0.5, fy=0.5)
-            face_locations = face_recognition.face_locations(small_img)
-            if face_locations:
-                print(f"Resized image found {len(face_locations)} faces")
-                # Scale locations back to original size
-                return [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in face_locations]
-        except Exception as e:
-            print(f"Resized detection failed: {str(e)}")
-
-        print("No faces detected with any method")
-        return []
-
-    def recognize_face(self, frame):
-        """Alias for process_webcam_frame for backward compatibility"""
-        return self.process_webcam_frame(frame)
+        print(f"\nLoaded {len(self.known_face_embeddings)} face embeddings from {len(students)} students")
 
     def process_webcam_frame(self, frame):
-        """Process a frame from webcam and compare with stored faces"""
-        if len(self.known_face_encodings) == 0:
+        """Process a frame from webcam and compare with stored faces using InsightFace"""
+        if len(self.known_face_embeddings) == 0:
             print("Warning: No known faces loaded")
             return []
 
@@ -257,44 +181,51 @@ class FaceRecognition:
                 print("Failed to clean webcam frame")
                 return []
 
-            # Detect faces in the frame
-            face_locations = self.detect_faces(cleaned_frame)
-            if not face_locations:
-                print("No faces detected in webcam frame")
-                return []
-
-            # Get encodings for detected faces
-            face_encodings = face_recognition.face_encodings(cleaned_frame, face_locations)
+            # Detect faces in the frame using InsightFace
+            faces = self.app.get(cleaned_frame)
             recognized_data = []
 
-            for i, face_encoding in enumerate(face_encodings):
-                # Compare with known faces
-                face_distances = face_recognition.face_distance(
-                    self.known_face_encodings,
-                    face_encoding
-                )
-
-                if len(face_distances) == 0:
+            for face in faces:
+                if face.det_score < 0.5:  # Minimum detection confidence
                     continue
 
-                best_match_index = np.argmin(face_distances)
-                best_match_distance = face_distances[best_match_index]
-                confidence = 1 - best_match_distance
+                # Compare with known faces
+                if not self.known_face_embeddings:
+                    continue
 
-                if confidence >= self.min_confidence:
+                # Convert embeddings to numpy arrays if they aren't already
+                known_embeddings = np.array(self.known_face_embeddings)
+                current_embedding = np.array(face.embedding).reshape(1, -1)
+
+                # Calculate cosine similarity
+                similarity_scores = np.dot(known_embeddings, current_embedding.T).flatten()
+                best_match_index = np.argmax(similarity_scores)
+                best_match_score = similarity_scores[best_match_index]
+
+                if best_match_score >= self.min_confidence:
                     recognized_data.append({
                         'id': self.known_face_ids[best_match_index],
                         'admission_number': self.known_admission_numbers[best_match_index],
-                        'confidence': float(confidence),
-                        'face_location': face_locations[i]
+                        'confidence': float(best_match_score),
+                        'face_location': [
+                            int(face.bbox[1]),  # top
+                            int(face.bbox[2]),  # right
+                            int(face.bbox[3]),  # bottom
+                            int(face.bbox[0])  # left
+                        ]
                     })
-                    print(f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {confidence:.2f}")
+                    print(
+                        f"Recognized {self.known_admission_numbers[best_match_index]} with confidence {best_match_score:.2f}")
 
             return recognized_data
 
         except Exception as e:
             print(f"Error in process_webcam_frame: {str(e)}")
             return []
+
+    def recognize_face(self, frame):
+        """Alias for process_webcam_frame for backward compatibility"""
+        return self.process_webcam_frame(frame)
 
     def mark_attendance(self, recognized_data):
         """Mark attendance for recognized students"""
