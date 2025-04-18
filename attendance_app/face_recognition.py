@@ -58,7 +58,7 @@ class FaceRecognition:
                 ctx_id = model.get('ctx_id', 0)  # Default to GPU 0, -1 for CPU
                 logger.info(f"Attempting to initialize FaceAnalysis with model: {model['name']}, ctx_id: {ctx_id}")
 
-                # Initialize with explicit model location
+
                 self.app = FaceAnalysis(
                     name=model['name'],
                     root=os.environ.get('INSIGHTFACE_HOME')
