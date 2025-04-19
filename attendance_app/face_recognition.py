@@ -6,7 +6,7 @@ from django.conf import settings
 from PIL import Image
 from insightface.app import FaceAnalysis
 
-# Set up logging
+
 logger = logging.getLogger(__name__)
 
 
