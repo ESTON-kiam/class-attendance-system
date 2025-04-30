@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import JsonResponse, HttpResponse
 
 from .face_recognition import FaceRecognition
+
 from .models import Course, Unit, Student, Attendance
 from .forms import CourseForm, UnitForm, StudentRegistrationForm, StudentUpdateForm
 
